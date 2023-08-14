@@ -10,8 +10,7 @@ env:
 # Run when release is created on GitHub
 on:
   push:
-    branches:
-      - "dev/${{ steps.mc_version.outputs.value }}"
+    types: [ published ]
 
 jobs:
   release:
@@ -38,6 +37,12 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: build
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: build/libs/*.jar
 
       - uses: actions/upload-artifact@v3
         with:
