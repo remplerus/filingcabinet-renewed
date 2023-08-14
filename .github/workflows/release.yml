@@ -9,8 +9,9 @@ env:
 
 # Run when release is created on GitHub
 on:
-  release:
-    types: [ published ]
+  push:
+    branches:
+      - 'main'
 
 jobs:
   release:
