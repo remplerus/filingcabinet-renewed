@@ -1,6 +1,8 @@
 package com.rempler.fcrenewed;
 
+import com.mojang.logging.LogUtils;
 import com.rempler.fcrenewed.common.init.FCInits;
+import com.rempler.fcrenewed.common.init.FCItems;
 import com.rempler.fcrenewed.util.Config;
 import com.rempler.fcrenewed.util.Constants;
 import net.minecraft.core.registries.Registries;
@@ -14,12 +16,14 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
+import org.slf4j.Logger;
 
 @Mod(Constants.MODID)
 public class FCRenewed {
+    public static final Logger LOGGER = LogUtils.getLogger();
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Constants.MODID);
     public static final RegistryObject<CreativeModeTab> TAB = CREATIVE_MODE_TABS.register("tab", () -> CreativeModeTab.builder()
-            .icon(Items.OAK_BOAT::getDefaultInstance).build());
+            .icon(() -> FCItems.FOLDER.get().getDefaultInstance()).build());
 
     public FCRenewed() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
