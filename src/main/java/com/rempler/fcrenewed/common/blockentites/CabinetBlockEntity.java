@@ -1,64 +1,47 @@
 package com.rempler.fcrenewed.common.blockentites;
 
+import com.mojang.logging.LogUtils;
+import com.rempler.fcrenewed.common.block.CabinetBlock;
 import com.rempler.fcrenewed.common.init.FCBlockEntities;
-import com.rempler.fcrenewed.common.item.FolderItem;
+import com.rempler.fcrenewed.common.init.FCItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.world.Containers;
-import net.minecraft.world.SimpleContainer;
-import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.items.IItemHandler;
-import net.minecraftforge.items.ItemStackHandler;
-import org.jetbrains.annotations.NotNull;
+import net.minecraftforge.items.wrapper.InvWrapper;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
 
-public class CabinetBlockEntity extends BlockEntity {
-    public LazyOptional<IItemHandler> lazyItemHandler = LazyOptional.empty();
-    public ContainerData data;
-    public ItemStackHandler itemHandler;
+import java.util.Objects;
+import java.util.function.Predicate;
+
+public class CabinetBlockEntity extends BlockEntity implements Container {
+
+    public static final int MAX_FOLDERS_IN_STORAGE = 8;
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private final NonNullList<ItemStack> items = NonNullList.withSize(8, ItemStack.EMPTY);
+    private int lastInteractedSlot = -1;
     public CabinetBlockEntity(BlockPos pPos, BlockState pBlockState) {
         this(FCBlockEntities.CABINET.get(), pPos, pBlockState);
     }
 
     public CabinetBlockEntity(BlockEntityType<? extends CabinetBlockEntity> pType, BlockPos pPos, BlockState pBlockState) {
         super(pType, pPos, pBlockState);
-        this.itemHandler = new ItemStackHandler(8) {
-            @Override
-            protected void onContentsChanged(int slot) {
-                setChanged();
-            }
-
-            @Override
-            public boolean isItemValid(int slot, @NotNull ItemStack stack) {
-                return switch (slot) {
-                    case 0, 1, 2, 3, 4, 5, 6, 7 -> stack.getItem() instanceof FolderItem;
-                    default -> super.isItemValid(slot, stack);
-                };
-            }
-        };
-    }
-
-    public void tickServer() {
-    }
-
-    public void drops() {
-        SimpleContainer inventory = new SimpleContainer(itemHandler.getSlots());
-        for (int i = 0; i < itemHandler.getSlots(); i++) {
-            inventory.setItem(i, itemHandler.getStackInSlot(i));
-        }
-
-        Containers.dropContents(level, worldPosition, inventory);
     }
 
     @Nullable
@@ -74,63 +57,124 @@ public class CabinetBlockEntity extends BlockEntity {
         return tag;
     }
 
-    @Override
-    public void load(CompoundTag pTag) {
-        super.load(pTag);
+    private void updateState(int pSlot) {
+        if (pSlot >= 0 && pSlot < 6) {
+            this.lastInteractedSlot = pSlot;
+            BlockState blockstate = this.getBlockState();
 
-        if (pTag.contains("inventory")) {
-            itemHandler.deserializeNBT(pTag.getCompound("inventory"));
+            for(int i = 0; i < CabinetBlock.SLOT_OCCUPIED_PROPERTIES.size(); ++i) {
+                boolean flag = !this.getItem(i).isEmpty();
+                BooleanProperty booleanproperty = CabinetBlock.SLOT_OCCUPIED_PROPERTIES.get(i);
+                blockstate = blockstate.setValue(booleanproperty, Boolean.valueOf(flag));
+            }
+
+            Objects.requireNonNull(this.level).setBlock(this.worldPosition, blockstate, 3);
+        } else {
+            LOGGER.error("Expected slot 0-5, got {}", (int)pSlot);
         }
     }
 
-    @Override
+    public void load(CompoundTag pTag) {
+        this.items.clear();
+        ContainerHelper.loadAllItems(pTag, this.items);
+        this.lastInteractedSlot = pTag.getInt("last_interacted_slot");
+    }
+
     protected void saveAdditional(CompoundTag pTag) {
-        super.saveAdditional(pTag);
-        pTag.put("inventory", itemHandler.serializeNBT());
+        ContainerHelper.saveAllItems(pTag, this.items, true);
+        pTag.putInt("last_interacted_slot", this.lastInteractedSlot);
+    }
+
+    public int count() {
+        return (int)this.items.stream().filter(Predicate.not(ItemStack::isEmpty)).count();
+    }
+
+    public void clearContent() {
+        this.items.clear();
+    }
+
+    public int getContainerSize() {
+        return MAX_FOLDERS_IN_STORAGE;
+    }
+
+    public boolean isEmpty() {
+        return this.items.stream().allMatch(ItemStack::isEmpty);
+    }
+
+    public ItemStack getItem(int pSlot) {
+        return this.items.get(pSlot);
+    }
+
+    public ItemStack removeItem(int pSlot, int pAmount) {
+        ItemStack itemstack = Objects.requireNonNullElse(this.items.get(pSlot), ItemStack.EMPTY);
+        this.items.set(pSlot, ItemStack.EMPTY);
+        if (!itemstack.isEmpty()) {
+            this.updateState(pSlot);
+        }
+
+        return itemstack;
+    }
+
+    public ItemStack removeItemNoUpdate(int pSlot) {
+        return this.removeItem(pSlot, 1);
+    }
+
+    public void setItem(int pSlot, ItemStack pStack) {
+        if (pStack.is(FCItems.FOLDER.get())) {
+            this.items.set(pSlot, pStack);
+            this.updateState(pSlot);
+        }
+
+    }
+
+    public boolean canTakeItem(Container pTarget, int pIndex, ItemStack pStack) {
+        return pTarget.hasAnyMatching((itemStack) -> {
+            if (itemStack.isEmpty()) {
+                return true;
+            } else {
+                return ItemStack.isSameItemSameTags(pStack, itemStack) && itemStack.getCount() + pStack.getCount() <= Math.min(itemStack.getMaxStackSize(), pTarget.getMaxStackSize());
+            }
+        });
+    }
+
+    public int getMaxStackSize() {
+        return 1;
+    }
+
+    public boolean stillValid(Player pPlayer) {
+        return Container.stillValidBlockEntity(this, pPlayer);
+    }
+
+    public boolean canPlaceItem(int pIndex, ItemStack pStack) {
+        return pStack.is(FCItems.FOLDER.get()) && this.getItem(pIndex).isEmpty();
+    }
+
+    public int getLastInteractedSlot() {
+        return this.lastInteractedSlot;
+    }
+
+    private LazyOptional<?> itemHandler = LazyOptional.of(this::createUnSidedHandler);
+    protected IItemHandler createUnSidedHandler() {
+        return new InvWrapper(this);
     }
 
     @Override
     public <T> LazyOptional<T> getCapability(Capability<T> cap, @Nullable Direction side) {
-        if (cap == ForgeCapabilities.ITEM_HANDLER) {
-            if (side == null) {
-                return lazyItemHandler.cast();
-            }
-        }
-
+        if (!this.remove && cap == ForgeCapabilities.ITEM_HANDLER)
+            return itemHandler.cast();
         return super.getCapability(cap, side);
-    }
-
-    @Override
-    public void onLoad() {
-        super.onLoad();
-        lazyItemHandler = LazyOptional.of(() -> itemHandler);
     }
 
     @Override
     public void invalidateCaps() {
         super.invalidateCaps();
-        lazyItemHandler.invalidate();
+        itemHandler.invalidate();
     }
 
-    
-
-    public void addFolder(ItemStack itemInHand) {
-        for (int i = 0; i < itemHandler.getSlots(); i++) {
-            if (itemHandler.getStackInSlot(i).isEmpty()) {
-                itemHandler.setStackInSlot(i, itemInHand);
-                break;
-            }
-        }
+    @Override
+    public void reviveCaps() {
+        super.reviveCaps();
+        itemHandler = LazyOptional.of(this::createUnSidedHandler);
     }
 
-    public ItemStack removeFolder() {
-        for (int i = itemHandler.getSlots() - 1; i >= 0; i--) {
-            if (!itemHandler.getStackInSlot(i).isEmpty()) {
-                ItemStack stack = itemHandler.getStackInSlot(i);
-                itemHandler.setStackInSlot(i, ItemStack.EMPTY);
-                return stack;
-            }
-        }
-        return ItemStack.EMPTY;
-    }
 }

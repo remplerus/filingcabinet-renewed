@@ -6,7 +6,9 @@ import com.rempler.fcrenewed.common.init.FCItems;
 import com.rempler.fcrenewed.util.Config;
 import com.rempler.fcrenewed.util.Constants;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -23,7 +25,13 @@ public class FCRenewed {
     public static final Logger LOGGER = LogUtils.getLogger();
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, Constants.MODID);
     public static final RegistryObject<CreativeModeTab> TAB = CREATIVE_MODE_TABS.register("tab", () -> CreativeModeTab.builder()
-            .icon(() -> FCItems.FOLDER.get().getDefaultInstance()).build());
+            .icon(() -> FCItems.FOLDER.get().getDefaultInstance())
+            .title(Component.translatable(Constants.MODID+".tab"))
+            .displayItems(((pParameters, pOutput) -> {
+                for (RegistryObject<Item> item : FCItems.ITEMS.getEntries()) {
+                    pOutput.accept(item.get().getDefaultInstance());
+                }
+            })).build());
 
     public FCRenewed() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
