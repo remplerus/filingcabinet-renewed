@@ -1,0 +1,6 @@
+{
+  "parent": "fcrenewed:block/template_cabinet_slot_bottom_mid_left",
+  "textures": {
+    "texture": "fcrenewed:block/cabinet_empty"
+  }
+}
